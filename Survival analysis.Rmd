@@ -1,0 +1,432 @@
+---
+title: "Survival for Reconstructed"
+author: "Ahmed Shaheen"
+date: "2022-08-30"
+output: html_document
+---
+
+#Loading libraries
+```{r}
+library(survival)
+library(tidyverse)
+library(janitor)
+library(readxl)
+library(survminer)
+```
+
+
+#Loading data
+```{r}
+data = read_excel('~/Downloads/Meta of KM (PFA)/Reconstructed/Reconstructed data.xlsx') %>% mutate_if(is.character, ~as.factor(as.character(.)))
+```
+
+
+#Building a Survival Object
+```{r}
+surv <- Surv(time = data$time, event = data$status)
+```
+
+
+#Median survival time
+```{r}
+fita <- survfit(surv ~ 1)
+print(fita)
+```
+
+
+```{r}
+
+fitc <- survfit(surv ~ data$treat)
+print(fitc)
+```
+
+
+#Testing the difference between two survival curves
+```{r}
+survdiff(surv ~ data$treat)
+```
+
+jpeg(file="~/Downloads/Meta of KM (PFA)/Results/Survival plot all.jpeg")
+dev.off()
+
+#K-M Plot with a number at risk table
+```{r}
+
+#jpeg(file="~/Downloads/Meta of KM (PFA)/Results/Survival plot all.jpeg")
+
+ggsurvplot(fitc, data = data, size = 1,
+   palette = c("purple", "darkgoldenrod"), 
+   conf.int = TRUE, 
+   pval = TRUE, 
+   risk.table = TRUE, 
+   risk.table.height = 0.25, 
+   risk.table.y.text.col = T, 
+   xlab = "Time in Days", 
+   break.time.by = 500,
+   legend.labs = c("Endo", "Endo-Epicardial"), 
+   ggtheme = theme_bw() 
+   )
+#dev.off()
+
+ggsurvplot(fita, data = data,size = 1,
+   conf.int = TRUE, 
+   risk.table = TRUE, 
+   risk.table.height = 0.25,
+   xlab = "Time in Days",
+   ggtheme = theme_bw() ,
+   break.time.by = 500
+)
+```
+
+
+#Cumulative hazard function
+```{r}
+fit33 <- survfit(Surv(time, status) ~ treat, data = data)
+ggsurvplot(fit33, data,
+          conf.int = TRUE,
+          risk.table.col = "strata", 
+          ggtheme = theme_bw(), 
+          palette = c("#E7B800", "#2E9FDF"),
+          fun = "cumhaz")
+
+```
+
+
+#Conditional survival over all data
+```{r}
+# plot the conditional survival curves at baseline, and for those who have survived 0:10 years
+library(condsurv)
+data$os_yrs = data$time/(30*12)
+myfit <- survfit(Surv(os_yrs, status) ~ 1, data = data)
+
+cond_times <- seq(0, 10, 1)
+
+gg_conditional_surv(
+  basekm = myfit, 
+  at = cond_times,
+  xlab = "Years",
+  main = "Conditional survival: all"
+  ) +
+  labs(color = "Conditional Time")
+
+#conditional survival estimate of surviving to a variety of different time points given that the subject has already survived for 0 years
+prob_times <- seq(0, 10, 1)
+
+purrr::map_df(
+  prob_times, 
+  ~conditional_surv_est(
+    basekm = myfit, 
+    t1 = 0, 
+    t2 = .x) 
+  ) %>% 
+  mutate(years = prob_times) %>% 
+  select(years, everything()) %>% 
+  knitr::kable()
+```
+
+
+#Conditional survival in endo alone
+```{r}
+datae <- as_tibble(data)
+datae = datae  %>% filter(treat == "Endo")
+
+# plot the conditional survival curves at baseline, and for those who have survived 0:10 years
+
+datae$os_yrs = datae$time/(30*12)
+myfit <- survfit(Surv(os_yrs, status) ~ 1, data = datae)
+
+cond_times <- seq(0, 10, 1)
+
+gg_conditional_surv(
+  basekm = myfit, 
+  at = cond_times,
+  xlab = "Years",
+  main = "Conditional survival: Endo"
+  ) +
+  labs(color = "Conditional Time")
+
+#conditional survival estimate of surviving to a variety of different time points given that the subject has already survived for 0 years
+prob_times <- seq(0, 10, 1)
+
+purrr::map_df(
+  prob_times, 
+  ~conditional_surv_est(
+    basekm = myfit, 
+    t1 = 0, 
+    t2 = .x) 
+  ) %>% 
+  mutate(years = prob_times) %>% 
+  select(years, everything()) %>% 
+  knitr::kable()
+```
+
+
+
+
+
+#Conditional survival in endo/epi group
+```{r}
+
+datai <- as_tibble(data)
+datai = datai  %>% filter(treat == "Endo-epicardial")
+# plot the conditional survival curves at baseline, and for those who have survived 0:10 years
+
+datai$os_yrs = datai$time/(30*12)
+myfit <- survfit(Surv(os_yrs, status) ~ 1, data = datai)
+
+cond_times <- seq(0, 10, 1)
+
+gg_conditional_surv(
+  basekm = myfit, 
+  at = cond_times,
+  xlab = "Years",
+  main = "Conditional survival: Endo-epicardial"
+  ) +
+  labs(color = "Conditional Time")
+
+#conditional survival estimate of surviving to a variety of different time points given that the subject has already survived for 0 years
+prob_times <- seq(0, 10, 1)
+
+purrr::map_df(
+  prob_times, 
+  ~conditional_surv_est(
+    basekm = myfit, 
+    t1 = 0, 
+    t2 = .x) 
+  ) %>% 
+  mutate(years = prob_times) %>% 
+  select(years, everything()) %>% 
+  knitr::kable()
+```
+
+
+
+#Cox Regression Model assumption 
+```{r}
+mv_fit <- coxph(Surv(time, status) ~ treat, data = data)
+cz <- cox.zph(mv_fit)
+print(cz)
+plot(cz)
+ggcoxzph(cz)
+```
+
+```{r}
+summary(mv_fit)
+```
+
+```{r}
+library(broom)
+tidy(mv_fit, exponentiate = TRUE)
+```
+```{r}
+Publish::publish(mv_fit)
+```
+
+
+```{r}
+anova(mv_fit)
+```
+
+
+#Fitting a Cox Model using cph from the rms package
+```{r}
+library(rms)
+units(data$time) <- "Days"
+d <- datadist(data)
+options(datadist = "d")
+
+hemsurv <- Surv(time = data$time, event = data$status)
+
+model_hem <- cph(hemsurv ~ treat, data = data, 
+                 x = TRUE, y = TRUE, surv = TRUE)
+```
+
+
+```{r}
+plot(summary(model_hem),main = "")
+title(main = "Hazard Ratio",line = 1.1, adj =0.65)
+```
+
+
+#Treatment’s effect on log relative hazard
+```{r}
+ggplot(Predict(model_hem, treat))
+```
+
+
+#nomogram
+```{r}
+survx <- Survival(model_hem)
+plot(nomogram(model_hem, fun=list(function(x) survx(365, x),
+                                  function(x) survx(365*2, x),
+                                  function(x) survx(365*3, x),
+                                  function(x) survx(365*10, x)),
+                                  funlabel=c("One-Year Pr(Survival)", 
+                                             "Two-Year Pr(Survival)",
+                                             "Three-Year Pr(Survival)",
+                                             "Ten-Years Pr(Survival)")))
+```
+
+
+
+
+#Landmark approach
+### Step 1 Select landmark time
+### Step 2 Subset population for those followed at least until landmark time
+###Step 3 Calculate follow-up time from landmark and apply traditional methods.
+
+
+```{r}
+lm_dat <- 
+  data %>% 
+  filter(time >= 1000) 
+```
+
+
+```{r}
+lm_dat <- 
+  lm_dat %>% 
+  mutate(
+    lm_T1 = time - 1000
+    )
+```
+
+We exclude 800 patients who were not followed until the landmark time of 90 days
+
+
+```{r}
+
+surv <- Surv(time = lm_dat$lm_T1, event = lm_dat$status)
+fit <- survfit(surv ~ lm_dat$treat)
+  ggsurvplot(fit, data = lm_dat, size = 1,
+      palette = c("purple", "darkgoldenrod"), 
+      conf.int = TRUE, 
+      pval = TRUE, 
+      risk.table = TRUE, 
+      risk.table.height = 0.25, 
+      risk.table.y.text.col = T, 
+      xlab = "Days from 1000-day landmark", 
+      break.time.by = 500,
+      legend.labs = c("Endo", "Endo-Epicardial"), 
+      ggtheme = theme_bw() )
+```
+
+
+```{r}
+library(gtsummary)
+library(survival)
+coxph(
+  Surv(time, status) ~ treat, 
+  subset = time >= 1000, 
+  data = data
+  ) %>% 
+  tbl_regression(exp = TRUE)
+```
+
+
+
+#Sensitivity Analysis ( For each subtype of the diseases)
+
+```{r}
+groups = levels(data$group)
+group_name <- list()
+HR <- list()  
+seHR <- list() 
+P_value <- list()
+for(i in groups ) {                                           
+  datag <- data  %>% filter(group == i) 
+  fit <- coxph(Surv(time, status) ~ treat, data = datag)          
+  sumfit <-summary(fit)  
+  sumfit <- as.data.frame(sumfit$coefficients)
+  group_name <- append(group_name, i)
+  HR <-  append(HR,c(sumfit$`exp(coef)`))
+  seHR <- append(seHR,c(sumfit$`se(coef)`)) 
+  P_value <- append(P_value,c(sumfit$`Pr(>|z|)`)) 
+}
+
+hazardratios = data.frame(unlist(group_name),unlist(HR), unlist(seHR), unlist(P_value)) %>% clean_names()
+
+```
+
+
+```{r}
+hazardratios <- as_tibble(hazardratios)
+hazardratios <- hazardratios %>% rename( Disease = unlist_group_name,
+                         'HR of the combined therapy' = unlist_hr ,
+                         'standard error' = unlist_se_hr,
+                         P.value = unlist_p_value )
+
+hazardratios
+
+```
+
+
+
+
+```{r}
+
+for(i in groups ) {                                           
+   datag <- data  %>% filter(group == i) 
+   surv <- Surv(time = datag$time, event = datag$status)
+
+   fit <- survfit(surv ~ datag$treat)
+  
+   
+   plot <- ggsurvplot(fit, data = datag, size = 1,
+      palette = c("purple", "darkgoldenrod"), 
+      conf.int = TRUE, 
+      pval = TRUE, 
+      risk.table = TRUE, 
+      risk.table.height = 0.25, 
+      risk.table.y.text.col = T, 
+      xlab = "Time in Days", 
+      break.time.by = 500,
+      legend.title = i ,
+      legend.labs = c("Endo", "Endo-Epicardial"), 
+      ggtheme = theme_bw() )
+   print(plot)
+  
+}
+
+
+```
+
+
+
+
+#Heterogniety 
+```{r}
+studies = levels(data$study)
+study_names <- list()
+HR <- list()  
+seHR <- list() 
+for(i in studies ) {                                           
+  datag <- data  %>% filter(study == i) 
+  fit <- coxph(Surv(time, status) ~ treat, data = datag)                        
+  sumfit <- summary(fit)  
+  sumfit <- as.data.frame(sumfit$coefficients)
+  study_names <- append(study_names, i)
+  HR <-  append(HR,c(sumfit$`exp(coef)`))
+  seHR <- append(seHR,c(sumfit$`se(coef)`))
+}
+
+hazardperstudy = data.frame(unlist(study_names),unlist(HR), unlist(seHR)) %>% clean_names()
+```
+
+
+
+```{r}
+library(meta)
+library(metafor)
+madata <- metagen(TE = unlist_hr,
+            seTE = unlist_se_hr,
+            data = hazardperstudy,
+            studlab = paste(unlist_study_names),
+            fixed = TRUE,
+            random = TRUE,
+            method.tau = "DL",
+            hakn = FALSE,
+            prediction = TRUE)
+forest(madata,fontsize = 8)
+```
+
